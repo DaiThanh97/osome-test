@@ -6,6 +6,7 @@ export enum TicketStatus {
 export enum TicketType {
   MANAGEMENT_REPORT = 'managementReport',
   REGISTRATION_ADDRESS_CHANGE = 'registrationAddressChange',
+  STRIKE_OFF = 'strikeOff',
 }
 
 export enum TicketCategory {

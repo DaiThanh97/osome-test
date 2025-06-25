@@ -10,6 +10,8 @@ import { User } from '@db/models/User';
 import { Company } from '@db/models/Company';
 import { CreateTicketDto, TicketDto } from './tickets.dto';
 import { TicketType, TicketCategory, TicketStatus, UserRole } from '@db/enums';
+import { Sequelize } from 'sequelize-typescript';
+import { Op } from 'sequelize';
 
 @Injectable()
 export class TicketsService {
@@ -18,6 +20,7 @@ export class TicketsService {
     private ticketModel: typeof Ticket,
     @InjectModel(User)
     private userModel: typeof User,
+    private sequelize: Sequelize,
   ) {}
 
   async findAll(): Promise<TicketDto[]> {
@@ -45,15 +48,26 @@ export class TicketsService {
       }
     }
 
-    const category =
-      type === TicketType.MANAGEMENT_REPORT
-        ? TicketCategory.ACCOUNTING
-        : TicketCategory.CORPORATE;
+    let category: TicketCategory;
+    let userRole: UserRole;
 
-    let userRole =
-      type === TicketType.MANAGEMENT_REPORT
-        ? UserRole.ACCOUNTANT
-        : UserRole.CORPORATE_SECRETARY;
+    // Determine category and user role based on ticket type
+    switch (type) {
+      case TicketType.MANAGEMENT_REPORT:
+        category = TicketCategory.ACCOUNTING;
+        userRole = UserRole.ACCOUNTANT;
+        break;
+      case TicketType.REGISTRATION_ADDRESS_CHANGE:
+        category = TicketCategory.CORPORATE;
+        userRole = UserRole.CORPORATE_SECRETARY;
+        break;
+      case TicketType.STRIKE_OFF:
+        category = TicketCategory.MANAGEMENT;
+        userRole = UserRole.DIRECTOR;
+        break;
+      default:
+        throw new BadRequestException(`Invalid ticket type`);
+    }
 
     let assignees = await this.userModel.findAll({
       where: { companyId, role: userRole },
@@ -86,6 +100,11 @@ export class TicketsService {
 
     const assignee = assignees[0];
 
+    // Use transaction for strikeOff to ensure data consistency
+    if (type === TicketType.STRIKE_OFF) {
+      return await this.createStrikeOffTicket(companyId, assignee.id, category);
+    }
+
     const ticket = await this.ticketModel.create({
       companyId,
       assigneeId: assignee.id,
@@ -102,5 +121,54 @@ export class TicketsService {
       category: ticket.category,
       companyId: ticket.companyId,
     };
+  }
+
+  private async createStrikeOffTicket(
+    companyId: number,
+    assigneeId: number,
+    category: TicketCategory,
+  ): Promise<TicketDto> {
+    const transaction = await this.sequelize.transaction();
+
+    try {
+      // Create the strikeOff ticket
+      const ticket = await this.ticketModel.create(
+        {
+          companyId,
+          assigneeId,
+          category,
+          type: TicketType.STRIKE_OFF,
+          status: TicketStatus.OPEN,
+        },
+        { transaction },
+      );
+
+      // Resolve all other active tickets for this company
+      await this.ticketModel.update(
+        { status: TicketStatus.RESOLVED },
+        {
+          where: {
+            companyId,
+            status: TicketStatus.OPEN,
+            id: { [Op.ne]: ticket.id }, // Exclude the newly created ticket
+          },
+          transaction,
+        },
+      );
+
+      await transaction.commit();
+
+      return {
+        id: ticket.id,
+        type: ticket.type,
+        assigneeId: ticket.assigneeId,
+        status: ticket.status,
+        category: ticket.category,
+        companyId: ticket.companyId,
+      };
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
   }
 }
