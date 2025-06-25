@@ -3,7 +3,7 @@ import { ReportsService } from './reports.service';
 
 @Controller('api/v1/reports')
 export class ReportsController {
-  constructor(private reportsService: ReportsService) {}
+  constructor(private readonly reportsService: ReportsService) {}
 
   @Get()
   report() {

@@ -1,13 +1,19 @@
 import { Module } from '@nestjs/common';
-import { DbModule } from './db.module';
-import { TicketsController } from './tickets/tickets.controller';
-import { ReportsController } from './reports/reports.controller';
-import { HealthcheckController } from './healthcheck/healthcheck.controller';
-import { ReportsService } from './reports/reports.service';
+import { DatabaseModule } from './modules/database/database.module';
+import { TicketsModule } from './modules/tickets/tickets.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { HealthcheckModule } from './modules/healthcheck/healthcheck.module';
+import { UsersModule } from './modules/users/users.module';
+import { CompaniesModule } from './modules/companies/companies.module';
 
 @Module({
-  imports: [DbModule],
-  controllers: [TicketsController, ReportsController, HealthcheckController],
-  providers: [ReportsService],
+  imports: [
+    DatabaseModule,
+    CompaniesModule,
+    UsersModule,
+    TicketsModule,
+    ReportsModule,
+    HealthcheckModule,
+  ],
 })
 export class AppModule {}
