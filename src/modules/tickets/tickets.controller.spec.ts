@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Company } from '@db/models/Company';
 import { TicketCategory, TicketStatus, TicketType, UserRole } from '@db/enums';
 import { User } from '@db/models/User';
-import { DbModule } from '@/config/database.module';
+import { DatabaseModule } from '@/modules/database/database.module';
 import { TicketsController } from './tickets.controller';
 
 describe('TicketsController', () => {
@@ -12,7 +12,7 @@ describe('TicketsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TicketsController],
-      imports: [DbModule],
+      imports: [DatabaseModule],
     }).compile();
 
     controller = module.get<TicketsController>(TicketsController);

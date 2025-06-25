@@ -5,9 +5,37 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { HealthcheckModule } from './modules/healthcheck/healthcheck.module';
 import { UsersModule } from './modules/users/users.module';
 import { CompaniesModule } from './modules/companies/companies.module';
+import { ENV_CONFIG, validate } from './config/env.config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { utilities, WinstonModule } from 'nest-winston';
+import * as winston from 'winston';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      load: [ENV_CONFIG],
+      isGlobal: true,
+      cache: true,
+      validate,
+    }),
+    WinstonModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        level: configService.get<boolean>('IS_PROD') ? 'info' : 'debug',
+        defaultMeta: {
+          service: 'application',
+          env: configService.get<string>('NODE_ENV'),
+        },
+        transports: [
+          new winston.transports.Console({
+            format: winston.format.combine(
+              winston.format.timestamp(),
+              utilities.format.nestLike(),
+            ),
+          }),
+        ],
+      }),
+    }),
     DatabaseModule,
     CompaniesModule,
     UsersModule,

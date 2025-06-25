@@ -3,8 +3,7 @@ import { InjectModel } from '@nestjs/sequelize';
 import { Ticket } from '@db/models/Ticket';
 import { User } from '@db/models/User';
 import { Company } from '@db/models/Company';
-import { CreateTicketDto } from './dto/create-ticket.dto';
-import { TicketDto } from './dto/ticket.dto';
+import { CreateTicketDto, TicketDto } from './tickets.dto';
 import { TicketType, TicketCategory, TicketStatus, UserRole } from '@db/enums';
 
 @Injectable()

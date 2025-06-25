@@ -1,11 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
-  // Global validation pipe
+  app.enableCors();
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -13,14 +13,13 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+  const configService = app.get(ConfigService);
+  const port = configService.get<string>('PORT') ?? '3000';
+  const API_PREFIX = configService.get<string>('API_PREFIX') ?? '';
+  app.setGlobalPrefix(API_PREFIX);
 
-  // Enable CORS
-  app.enableCors();
-
-  // Start the server
-  const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Application is running on: http://localhost:${port}`);
+  console.log(`🚀 Application is running on: http://localhost:${port}`);
 }
 
 bootstrap().catch((err) => {

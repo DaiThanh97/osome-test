@@ -4,7 +4,7 @@ import { Model, ModelCtor } from 'sequelize-typescript';
 import { Company } from '../../db/models/Company';
 import { Ticket } from '../../db/models/Ticket';
 import { User } from '../../db/models/User';
-import { DbModule } from '../db.module';
+import { DatabaseModule } from '@/modules/database/database.module';
 
 beforeEach(async () => {
   jest.restoreAllMocks();
@@ -13,7 +13,7 @@ beforeEach(async () => {
 
 export async function cleanTables() {
   await Test.createTestingModule({
-    imports: [DbModule],
+    imports: [DatabaseModule],
   }).compile();
 
   const models: ModelCtor<Model>[] = [Ticket, User, Company];
