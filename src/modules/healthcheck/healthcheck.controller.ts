@@ -2,7 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { User } from '@db/models/User';
 
-@Controller('api/v1/healthcheck')
+@Controller('healthcheck')
 export class HealthcheckController {
   constructor(
     @InjectModel(User)

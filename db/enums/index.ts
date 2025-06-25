@@ -17,4 +17,5 @@ export enum TicketCategory {
 export enum UserRole {
   ACCOUNTANT = 'accountant',
   CORPORATE_SECRETARY = 'corporateSecretary',
+  DIRECTOR = 'director',
 }

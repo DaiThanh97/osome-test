@@ -1,4 +1,9 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Ticket } from '@db/models/Ticket';
 import { User } from '@db/models/User';
@@ -24,29 +29,57 @@ export class TicketsService {
   async create(createTicketDto: CreateTicketDto): Promise<TicketDto> {
     const { type, companyId } = createTicketDto;
 
+    if (type === TicketType.REGISTRATION_ADDRESS_CHANGE) {
+      const existingTicket = await this.ticketModel.findOne({
+        where: {
+          companyId,
+          type: TicketType.REGISTRATION_ADDRESS_CHANGE,
+          status: TicketStatus.OPEN,
+        },
+      });
+
+      if (existingTicket) {
+        throw new ConflictException(
+          `Already has a duplicate registrationAddressChange ticket`,
+        );
+      }
+    }
+
     const category =
       type === TicketType.MANAGEMENT_REPORT
         ? TicketCategory.ACCOUNTING
         : TicketCategory.CORPORATE;
 
-    const userRole =
+    let userRole =
       type === TicketType.MANAGEMENT_REPORT
         ? UserRole.ACCOUNTANT
         : UserRole.CORPORATE_SECRETARY;
 
-    const assignees = await this.userModel.findAll({
+    let assignees = await this.userModel.findAll({
       where: { companyId, role: userRole },
       order: [['createdAt', 'DESC']],
     });
 
+    // If no corporate secretary found for registrationAddressChange, try to find a director
+    if (type === TicketType.REGISTRATION_ADDRESS_CHANGE && !assignees.length) {
+      userRole = UserRole.DIRECTOR;
+      assignees = await this.userModel.findAll({
+        where: { companyId, role: UserRole.DIRECTOR },
+      });
+    }
+
     if (!assignees.length) {
-      throw new ConflictException(
+      throw new NotFoundException(
         `Cannot find user with role ${userRole} to create a ticket`,
       );
     }
 
-    if (userRole === UserRole.CORPORATE_SECRETARY && assignees.length > 1) {
-      throw new ConflictException(
+    if (
+      (userRole === UserRole.CORPORATE_SECRETARY ||
+        userRole === UserRole.DIRECTOR) &&
+      assignees.length > 1
+    ) {
+      throw new BadRequestException(
         `Multiple users with role ${userRole}. Cannot create a ticket`,
       );
     }
