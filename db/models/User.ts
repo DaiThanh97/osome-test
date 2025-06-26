@@ -6,11 +6,20 @@ import {
   ForeignKey,
   PrimaryKey,
   AutoIncrement,
+  Index,
 } from 'sequelize-typescript';
 import { Company } from './Company';
 import { UserRole } from '../enums';
 
-@Table({ tableName: 'users' })
+@Table({
+  tableName: 'users',
+  indexes: [
+    {
+      name: 'user_company_role_idx',
+      fields: ['companyId', 'role'],
+    },
+  ],
+})
 export class User extends Model {
   @AutoIncrement
   @PrimaryKey
@@ -20,9 +29,11 @@ export class User extends Model {
   @Column
   declare name: string;
 
+  @Index
   @Column
   declare role: UserRole;
 
+  @Index
   @ForeignKey(() => Company)
   declare companyId: number;
 
