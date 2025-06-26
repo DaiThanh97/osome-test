@@ -1,189 +1,167 @@
-# ACME ACCOUNTING
+# ACME Accounting
 
-Welcome to ACME acounting, this codebase serves as a way for you to
-know how we at OSOME work and how you work through challenges while
-adopting an existing codebase.
+A modern accounting and company management system built with NestJS, PostgreSQL, and Redis.
 
----
+## Overview
 
-There are 3 tasks that you need to do to complete this task, all of them 
-must be done for you to move forward.
+ACME Accounting is a comprehensive solution for managing company tickets, users, and generating financial reports. The system handles various accounting and corporate operations through a ticket-based workflow system.
 
-Keep things elegant, but as simple as possible.
+## Features
 
-If there are any issues, contact your hiring representative and they 
-will clarify it with you.
+- **Ticket Management**: Create and track different types of tickets (Management Reports, Registration Address Changes, Strike-Off)
+- **User Role Management**: Support for different user roles (Accountant, Corporate Secretary, Director)
+- **Company Management**: Track companies and their associated users
+- **Report Generation**: Generate financial reports asynchronously with Bull queue processing
+- **API Documentation**: Swagger UI for easy API exploration
 
-If you are to use AI/LLM, **DISCLOSE** where and how you used it.
+## Architecture
 
-## Context
+- **Backend**: NestJS framework with TypeScript
+- **Database**: PostgreSQL with Sequelize ORM
+- **Job Queue**: Bull with Redis for background processing
+- **Testing**: Jest for unit and integration testing
 
-We have `companies`, companies have `users`.
+## Data Model
 
-Every user has a `role`, which defines what this user does in the 
-company. There might be multiple users with the same role.
+### Core Entities
 
-We create `tickets` in a company and assign them to users.
+- **Companies**: Business entities in the system
+- **Users**: Users with specific roles within companies
+- **Tickets**: Work items assigned to users with specific types and categories
 
-Every ticket has
-1. Type - defines the work that should be done by the user
-2. Single assignee - the user
-3. Category - every type is under a particular category
-4. Status - open or resolved
+### Ticket Types
 
-**Endpoints**
+- `managementReport`: Accounting category, assigned to Accountants
+- `registrationAddressChange`: Corporate category, assigned to Corporate Secretaries or Directors
+- `strikeOff`: Management category, assigned to Directors
 
-- `GET  api/v1/tickets`    - returns all tickets in the system. Without 
-                             pagination. This is only for creating logic 
-                             testing.
-- `POST api/v1/tickets`    - creates a ticket. It accepts `type` and `companyId`
-- `GET  api/v1/report`     - starts the processing of existing data and
-                             builds a report.        
+## API Endpoints
 
-**Ticket Creation Rules**
+- `GET /tickets`: List all tickets in the system
+- `POST /tickets`: Create a new ticket with specified type and company
+- `GET /report`: Generate financial reports asynchronously
+- `GET /healthcheck`: Check system health
 
-If a ticket type is `managementReport`, then the ticket category 
-should be `accounting`. The assignee is a user with the role = `Accountant`. 
-If there are multiple accountants in the company, 
-take the most recently created one.
+## Performance Optimizations
 
-If a ticket type is `registrationAddressChange`, then the ticket category 
-should be `Corporate`. Assignee is a user with the role `Corporate secretary`. 
-If there are multiple secretaries, throw an error.
+### Database Indexing Strategy
 
-If we cannot find an assignee with the required role, throw an error.
+The following indexes have been implemented to optimize query performance:
 
-## Tasks
+#### Ticket Model Indexes
 
-Before working on tasks please clone the repo to your own GitHub account
+- Single-column indexes:
 
-When done commit the changes and create a PR for the changes in YOUR OWN
-repository. Send us a link for review.
+  - `type`: Improves queries filtering by ticket type
+  - `status`: Improves queries filtering by ticket status
+  - `companyId`: Improves queries filtering by company
+  - `assigneeId`: Improves queries filtering by assignee
 
-### 1. Change requests
+- Composite indexes:
+  - `(companyId, type, status)`: Optimizes checking for existing tickets of a specific type and status for a company
+  - `(companyId, status)`: Optimizes finding all tickets with a specific status for a company
 
-This service is old, new business requirements have come in and it
-requires us to change the internals of the service.
+#### User Model Indexes
 
-Let's generate with fixing the behaviour of the service.
+- Single-column indexes:
 
-**Instructions**
+  - `role`: Improves filtering users by role
+  - `companyId`: Improves filtering users by company
 
-1. When creating a `registrationAddressChange` ticket, if the company 
-   already has a ticket with this type, throw a duplication error.
-2. Add a new `Director` user role. If we create a `registrationAddressChange`
-   ticket, and we cannot find a corporate secretary, assign it to the `Director`. 
-   If there are multiple directors, throw an error.
+- Composite indexes:
+  - `(companyId, role)`: Optimizes finding users with a specific role in a company
 
-### 2. New ticket
+### Asynchronous Processing
 
-It seems that companies are closing down more than usual, we never considered
-this case before. Maybe it's time to add another type of ticket.
+Reports are processed asynchronously using Bull queues to avoid blocking the main thread and improve response times.
 
-**Instructions**
+## Getting Started
 
-1. Create New Ticket Type
-   ```
-   {
-       "type": "strikeOff",
-       "Category": "Management",
-       "Assignee": "Director"
-   }
-   ```
+### Prerequisites
 
-**Side Effects**
-- If there are multiple directors, throw an error.
-- Resolve all other active tickets in this company (we do not need 
-  them anymore as we are closing down the company).
+- Node.js (version specified in .nvmrc)
+- Docker and Docker Compose
+- PostgreSQL
+- Redis
 
-### 3. Optimize
+### Installation
 
-ACME processes tons of data every day. It is essential for us that we
-make sure that our internal processes and data are provided accurately
-and on time.
+1. Clone the repository
 
-We have a legacy service that processes data for us, but it takes a long
-time to get the results. Maybe this is a good time to refactor the code.
-
-**Instructions**
-
-1. Optimize the endpoint so that the time it takes to finish an action
-   is marginally faster.
-2. The endpoint should not hold the connection of the client while processing
-   the data in the background.
-3. We are looking for performance, not accuracy. If you see numbers not 
-   tallying correctly in the report, you may skip it.
-
-**Acceptance**
-
-1. The endpoint should be respond faster than the existing implementation
-2. Documents should process in the background and the client should be able
-   to check the status of the processing.
-3. Metrics should be recorded for discussion.
-
-## Stretch Tasks
-
-There are common principles in the repository that are intentionally 
-left out and not covered by the base tasks given above. These are common 
-best-practice tasks that you can make in any node project. 
-
-Doing more than what is given above will be plus points and will be
-considered in our code review session.
-
-Here are some of the topics you can consider:
-
-- [ ]  Code Quality
-- [ ]  Fixing Subtle Errors
-- [ ]  Using Tests
-- [ ]  Performance Considerations
-
-# Project setup and run
-
-1. NPM
 ```sh
-$ nvm use
-$ npm install
+git clone https://github.com/DaiThanh97/osome-test.git
+cd osome-test
 ```
 
-2. Run the DB container
+2. Install dependencies
+
+```sh
+nvm use
+npm install
+```
+
+3. Start the database and Redis
+
 ```sh
 docker-compose up -d
 ```
 
-3. Run migrations
+4. Run migrations
+
 ```sh
 npm run db:migrate
 ```
 
-4. Start the server
+5. Start the server
+
 ```sh
 npm start
 ```
 
-5. Go to http://localhost:3000/api/v1/healthcheck 🍾
+6. Access the API at http://localhost:3000/api/v1/healthcheck
+7. Access API documentation at http://localhost:3000/api/v1/docs
 
-# Testing
-We use the integration tests instead of a unit ones for controllers.
-It means we do not mock db requests but perform them on a test db.
+<img src='./imgs/swagger.png'>
 
-To run tests:
+## Testing
 
-1.Run the DB container (if you did not before)
+The project uses integration tests that run against a test database.
+
+1. Ensure the database container is running
+
 ```sh
 docker-compose up -d
 ```
 
-2.Create a db
+2. Create the test database
+
 ```sh
 npm run db:create:test
 ```
 
-3. Run migrations
+3. Run migrations on the test database
+
 ```sh
 npm run db:migrate:test
 ```
 
-4. Test
+4. Run the tests
+
 ```sh
 npm test
 ```
+
+## Development
+
+### Available Scripts
+
+- `npm run build`: Build the application
+- `npm run start:dev`: Start the application in development mode with hot reload
+- `npm run lint`: Run ESLint
+- `npm run test`: Run tests
+- `npm run migrate`: Run database migrations
+- `npm run db:reset`: Reset the database (undo all migrations)
+
+## License
+
+Proprietary - All rights reserved
