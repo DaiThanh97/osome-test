@@ -12,6 +12,7 @@ import { CreateTicketDto, TicketDto } from './tickets.dto';
 import { TicketType, TicketCategory, TicketStatus, UserRole } from '@db/enums';
 import { Sequelize } from 'sequelize-typescript';
 import { Op } from 'sequelize';
+import { CompaniesService } from '../companies/companies.service';
 
 @Injectable()
 export class TicketsService {
@@ -21,6 +22,7 @@ export class TicketsService {
     @InjectModel(User)
     private userModel: typeof User,
     private sequelize: Sequelize,
+    private companiesService: CompaniesService,
   ) {}
 
   async findAll(): Promise<TicketDto[]> {
@@ -31,6 +33,11 @@ export class TicketsService {
 
   async create(createTicketDto: CreateTicketDto): Promise<TicketDto> {
     const { type, companyId } = createTicketDto;
+    const company = await this.companiesService.findById(companyId);
+
+    if (!company) {
+      throw new NotFoundException('Company not found');
+    }
 
     if (type === TicketType.REGISTRATION_ADDRESS_CHANGE) {
       const existingTicket = await this.ticketModel.findOne({
@@ -142,7 +149,6 @@ export class TicketsService {
         { transaction },
       );
 
-      // Resolve all other active tickets for this company
       await this.ticketModel.update(
         { status: TicketStatus.RESOLVED },
         {
