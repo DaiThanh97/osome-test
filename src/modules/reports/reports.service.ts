@@ -1,225 +1,148 @@
-import { Injectable } from '@nestjs/common';
-import * as fs from 'fs';
-import * as path from 'path';
-import { performance } from 'perf_hooks';
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
+import { v4 as uuidv4 } from 'uuid';
+import { PROCESSOR_NAME } from './reports.constant';
 
-interface ReportState {
-  accounts: string;
-  yearly: string;
-  fs: string;
+export interface ReportResult {
+  type: string;
+  duration: number;
+}
+
+export interface ReportJobStatus {
+  jobId: string;
+  status: {
+    accounts: string;
+    yearly: string;
+    fs: string;
+  };
+  startTime: Date;
+  endTime?: Date;
+  totalDuration?: number;
 }
 
 @Injectable()
 export class ReportsService {
-  private states: ReportState = {
-    accounts: 'idle',
-    yearly: 'idle',
-    fs: 'idle',
-  };
+  private readonly logger = new Logger(ReportsService.name);
+  private jobStatuses: Map<string, ReportJobStatus> = new Map();
 
-  state(scope: keyof ReportState): string {
-    return this.states[scope];
+  constructor(@InjectQueue('reports') private reportsQueue: Queue) {}
+
+  getJobStatus(jobId: string): ReportJobStatus | undefined {
+    return this.jobStatuses.get(jobId);
   }
 
-  accounts(): void {
-    this.states.accounts = 'starting';
-    const start = performance.now();
-    const tmpDir = 'tmp';
-    const outputFile = 'out/accounts.csv';
-    const accountBalances: Record<string, number> = {};
-
-    fs.readdirSync(tmpDir).forEach((file) => {
-      if (file.endsWith('.csv')) {
-        const lines = fs
-          .readFileSync(path.join(tmpDir, file), 'utf-8')
-          .trim()
-          .split('\n');
-        for (const line of lines) {
-          const [, account, , debit, credit] = line.split(',');
-          if (!accountBalances[account]) {
-            accountBalances[account] = 0;
-          }
-          accountBalances[account] +=
-            parseFloat(String(debit || 0)) - parseFloat(String(credit || 0));
-        }
-      }
-    });
-
-    const output = ['Account,Balance'];
-    for (const [account, balance] of Object.entries(accountBalances)) {
-      output.push(`${account},${balance.toFixed(2)}`);
-    }
-
-    fs.writeFileSync(outputFile, output.join('\n'));
-    this.states.accounts = `finished in ${((performance.now() - start) / 1000).toFixed(2)}`;
-  }
-
-  yearly(): void {
-    this.states.yearly = 'starting';
-    const start = performance.now();
-    const tmpDir = 'tmp';
-    const outputFile = 'out/yearly.csv';
-    const cashByYear: Record<string, number> = {};
-
-    fs.readdirSync(tmpDir).forEach((file) => {
-      if (file.endsWith('.csv') && file !== 'yearly.csv') {
-        const lines = fs
-          .readFileSync(path.join(tmpDir, file), 'utf-8')
-          .trim()
-          .split('\n');
-        for (const line of lines) {
-          const [date, account, , debit, credit] = line.split(',');
-          if (account === 'Cash') {
-            const year = new Date(date).getFullYear();
-            if (!cashByYear[year]) {
-              cashByYear[year] = 0;
-            }
-            cashByYear[year] +=
-              parseFloat(String(debit || 0)) - parseFloat(String(credit || 0));
-          }
-        }
-      }
-    });
-
-    const output = ['Financial Year,Cash Balance'];
-    Object.keys(cashByYear)
-      .sort()
-      .forEach((year) => {
-        output.push(`${year},${cashByYear[year].toFixed(2)}`);
-      });
-
-    fs.writeFileSync(outputFile, output.join('\n'));
-    this.states.yearly = `finished in ${((performance.now() - start) / 1000).toFixed(2)}`;
-  }
-
-  fs(): void {
-    this.states.fs = 'starting';
-    const start = performance.now();
-    const tmpDir = 'tmp';
-    const outputFile = 'out/fs.csv';
-
-    const categories = {
-      'Income Statement': {
-        Revenues: ['Sales Revenue'],
-        Expenses: [
-          'Cost of Goods Sold',
-          'Salaries Expense',
-          'Rent Expense',
-          'Utilities Expense',
-          'Interest Expense',
-          'Tax Expense',
-        ],
+  async generateReports(): Promise<string> {
+    // Generate a unique job ID
+    const jobId = uuidv4();
+    const jobStatus: ReportJobStatus = {
+      jobId,
+      status: {
+        accounts: 'queued',
+        yearly: 'queued',
+        fs: 'queued',
       },
-      'Balance Sheet': {
-        Assets: [
-          'Cash',
-          'Accounts Receivable',
-          'Inventory',
-          'Fixed Assets',
-          'Prepaid Expenses',
-        ],
-        Liabilities: [
-          'Accounts Payable',
-          'Loan Payable',
-          'Sales Tax Payable',
-          'Accrued Liabilities',
-          'Unearned Revenue',
-          'Dividends Payable',
-        ],
-        Equity: ['Common Stock', 'Retained Earnings'],
-      },
+      startTime: new Date(),
     };
 
-    const balances: Record<string, number> = {};
-    for (const section of Object.values(categories)) {
-      for (const group of Object.values(section)) {
-        for (const account of group) {
-          balances[account] = 0;
-        }
+    this.jobStatuses.set(jobId, jobStatus);
+    this.logger.log(`Starting report generation job: ${jobId}`);
+
+    try {
+      // Add jobs to the queue
+      const [accountsJob, yearlyJob, fsJob] = await Promise.all([
+        this.reportsQueue.add(PROCESSOR_NAME.ACCOUNTS, { jobId }),
+        this.reportsQueue.add(PROCESSOR_NAME.YEARLY, { jobId }),
+        this.reportsQueue.add(PROCESSOR_NAME.FS, { jobId }),
+      ]);
+
+      // Set up completion handlers
+      accountsJob
+        .finished()
+        .then((result: ReportResult) => {
+          this.updateJobStatus(
+            jobId,
+            'accounts',
+            `finished in ${result.duration.toFixed(2)}s`,
+          );
+          this.checkJobCompletion(jobId);
+        })
+        .catch((err: Error) => {
+          this.updateJobStatus(jobId, 'accounts', `error: ${err.message}`);
+        });
+
+      yearlyJob
+        .finished()
+        .then((result: ReportResult) => {
+          this.updateJobStatus(
+            jobId,
+            'yearly',
+            `finished in ${result.duration.toFixed(2)}s`,
+          );
+          this.checkJobCompletion(jobId);
+        })
+        .catch((err: Error) => {
+          this.updateJobStatus(jobId, 'yearly', `error: ${err.message}`);
+        });
+
+      fsJob
+        .finished()
+        .then((result: ReportResult) => {
+          this.updateJobStatus(
+            jobId,
+            'fs',
+            `finished in ${result.duration.toFixed(2)}s`,
+          );
+          this.checkJobCompletion(jobId);
+        })
+        .catch((err: Error) => {
+          this.updateJobStatus(jobId, 'fs', `error: ${err.message}`);
+        });
+
+      return jobId;
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logger.error(`Failed to queue report jobs: ${error.message}`);
+      } else {
+        this.logger.error('Failed to queue report jobs: Unknown error');
       }
+      throw error;
     }
+  }
 
-    fs.readdirSync(tmpDir).forEach((file) => {
-      if (file.endsWith('.csv') && file !== 'fs.csv') {
-        const lines = fs
-          .readFileSync(path.join(tmpDir, file), 'utf-8')
-          .trim()
-          .split('\n');
-
-        for (const line of lines) {
-          const [, account, , debit, credit] = line.split(',');
-
-          if (Object.prototype.hasOwnProperty.call(balances, account)) {
-            balances[account] +=
-              parseFloat(String(debit || 0)) - parseFloat(String(credit || 0));
-          }
-        }
-      }
-    });
-
-    const output: string[] = [];
-    output.push('Basic Financial Statement');
-    output.push('');
-    output.push('Income Statement');
-
-    let totalRevenue = 0;
-    let totalExpenses = 0;
-
-    for (const account of categories['Income Statement']['Revenues']) {
-      const value = balances[account] || 0;
-      output.push(`${account},${value.toFixed(2)}`);
-      totalRevenue += value;
+  private updateJobStatus(
+    jobId: string,
+    reportType: 'accounts' | 'yearly' | 'fs',
+    status: string,
+  ): void {
+    const jobStatus = this.jobStatuses.get(jobId);
+    if (jobStatus) {
+      jobStatus.status[reportType] = status;
+      this.logger.log(
+        `Updated ${reportType} status for job ${jobId}: ${status}`,
+      );
     }
+  }
 
-    for (const account of categories['Income Statement']['Expenses']) {
-      const value = balances[account] || 0;
-      output.push(`${account},${value.toFixed(2)}`);
-      totalExpenses += value;
+  private checkJobCompletion(jobId: string): void {
+    const jobStatus = this.jobStatuses.get(jobId);
+    if (!jobStatus) return;
+
+    const { accounts, yearly, fs } = jobStatus.status;
+
+    // Check if all reports are finished or have errors
+    if (
+      (accounts.startsWith('finished') || accounts.startsWith('error')) &&
+      (yearly.startsWith('finished') || yearly.startsWith('error')) &&
+      (fs.startsWith('finished') || fs.startsWith('error'))
+    ) {
+      jobStatus.endTime = new Date();
+      jobStatus.totalDuration =
+        (jobStatus.endTime.getTime() - jobStatus.startTime.getTime()) / 1000;
+
+      this.logger.log(
+        `Job ${jobId} completed in ${jobStatus.totalDuration.toFixed(2)}s`,
+      );
     }
-
-    output.push(`Net Income,${(totalRevenue - totalExpenses).toFixed(2)}`);
-    output.push('');
-    output.push('Balance Sheet');
-
-    let totalAssets = 0;
-    let totalLiabilities = 0;
-    let totalEquity = 0;
-
-    output.push('Assets');
-    for (const account of categories['Balance Sheet']['Assets']) {
-      const value = balances[account] || 0;
-      output.push(`${account},${value.toFixed(2)}`);
-      totalAssets += value;
-    }
-    output.push(`Total Assets,${totalAssets.toFixed(2)}`);
-    output.push('');
-
-    output.push('Liabilities');
-    for (const account of categories['Balance Sheet']['Liabilities']) {
-      const value = balances[account] || 0;
-      output.push(`${account},${value.toFixed(2)}`);
-      totalLiabilities += value;
-    }
-    output.push(`Total Liabilities,${totalLiabilities.toFixed(2)}`);
-    output.push('');
-
-    output.push('Equity');
-    for (const account of categories['Balance Sheet']['Equity']) {
-      const value = balances[account] || 0;
-      output.push(`${account},${value.toFixed(2)}`);
-      totalEquity += value;
-    }
-    output.push(
-      `Retained Earnings (Net Income),${(totalRevenue - totalExpenses).toFixed(2)}`,
-    );
-    totalEquity += totalRevenue - totalExpenses;
-    output.push(`Total Equity,${totalEquity.toFixed(2)}`);
-    output.push('');
-    output.push(
-      `Assets = Liabilities + Equity, ${totalAssets.toFixed(2)} = ${(totalLiabilities + totalEquity).toFixed(2)}`,
-    );
-
-    fs.writeFileSync(outputFile, output.join('\n'));
-    this.states.fs = `finished in ${((performance.now() - start) / 1000).toFixed(2)}`;
   }
 }

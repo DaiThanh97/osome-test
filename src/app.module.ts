@@ -9,6 +9,7 @@ import { ENV_CONFIG, validate } from './config/env.config';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { utilities, WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
+import { BullModule } from '@nestjs/bull';
 
 @Module({
   imports: [
@@ -35,6 +36,21 @@ import * as winston from 'winston';
           }),
         ],
       }),
+    }),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        redis: {
+          host: configService.get('REDIS_HOST', 'localhost'),
+          port: parseInt(configService.get('REDIS_PORT', '6379')),
+        },
+        defaultJobOptions: {
+          attempts: 3,
+          removeOnComplete: true,
+          removeOnFail: false,
+        },
+      }),
+      inject: [ConfigService],
     }),
     DatabaseModule,
     CompaniesModule,

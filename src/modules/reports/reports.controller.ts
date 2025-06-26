@@ -1,25 +1,44 @@
-import { Controller, Get, Post, HttpCode } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  HttpCode,
+  Param,
+  NotFoundException,
+  HttpStatus,
+} from '@nestjs/common';
 import { ReportsService } from './reports.service';
 
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
-  @Get()
-  report() {
+  @Get(':jobId')
+  getJobStatus(@Param('jobId') jobId: string) {
+    const jobStatus = this.reportsService.getJobStatus(jobId);
+    if (!jobStatus) {
+      throw new NotFoundException(`Job ${jobId} not found`);
+    }
+
     return {
-      'accounts.csv': this.reportsService.state('accounts'),
-      'yearly.csv': this.reportsService.state('yearly'),
-      'fs.csv': this.reportsService.state('fs'),
+      jobId: jobStatus.jobId,
+      status: jobStatus.status,
+      startTime: jobStatus.startTime,
+      endTime: jobStatus.endTime,
+      totalDuration: jobStatus.totalDuration
+        ? `${jobStatus.totalDuration.toFixed(2)}s`
+        : null,
     };
   }
 
   @Post()
-  @HttpCode(201)
-  generate() {
-    this.reportsService.accounts();
-    this.reportsService.yearly();
-    this.reportsService.fs();
-    return { message: 'finished' };
+  @HttpCode(HttpStatus.ACCEPTED)
+  async generateReports() {
+    const jobId = await this.reportsService.generateReports();
+    return {
+      message: 'Report generation started',
+      jobId,
+      statusUrl: `/reports/${jobId}`,
+    };
   }
 }

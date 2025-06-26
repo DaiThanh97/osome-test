@@ -131,7 +131,6 @@ export class TicketsService {
     const transaction = await this.sequelize.transaction();
 
     try {
-      // Create the strikeOff ticket
       const ticket = await this.ticketModel.create(
         {
           companyId,
